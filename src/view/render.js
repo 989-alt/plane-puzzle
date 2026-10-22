@@ -1,9 +1,10 @@
-// SVG 렌더: 판(밝은 안쪽 면 + 칸 선), 1단계 완성 그림(ghost), 끌기 놓을 자리 미리보기, 조각(두께·그림자·무늬),
+// SVG 렌더: 판(밝은 안쪽 면 + 칸 선), 1단계 완성 그림(ghost), 끌기 놓을 자리 미리보기, 조각(금테 + 깎은 보석 칸·그림자),
 // 1단계 붉은 표시, 숨김 모드 이동 카드 줄, 뒤집기·돌리기 애니메이션.
 // 무대 배경 그림은 CSS(cover)로 깔고 svg는 그 위에 투명하게 겹친다. svg 좌표 = 무대 px(viewBox 0 0 W H).
 import { normalize, translate } from '../core/grid.js';
 import { elemMarked } from '../core/layout.js';
-import { loopsOf, loopsPath, innerCellEdges, triPolygon, pieceRect, cellBoxes } from './geom.js';
+import { loopsOf, loopsPath, innerCellEdges, pieceRect, cellBoxes } from './geom.js';
+import { shade, gemParts, tintTri } from './gems.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -52,6 +53,8 @@ export const MOVE_ICON = {
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
   reset: '<path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/>',
 };
+// 숨김 모드 카드 줄 기호 색: 뒤집기 보라, 시계 방향 주황, 시계 반대 방향 파랑(패널 버튼 색과 같은 계열).
+export const QUEUE_INK = (m) => (m.startsWith('flip') ? '#7A3FB0' : m.startsWith('ccw') ? '#2F7BA8' : '#B5600A');
 export const MOVE_LABEL = {
   flipUp: '위쪽으로 뒤집기', flipDown: '아래쪽으로 뒤집기', flipLeft: '왼쪽으로 뒤집기', flipRight: '오른쪽으로 뒤집기',
   cw90: '시계 방향으로 90° 돌리기', cw180: '시계 방향으로 180° 돌리기', cw270: '시계 방향으로 270° 돌리기',
@@ -83,15 +86,6 @@ function invStr(c, f) {
 }
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-function shade(hex, f) {
-  const n = parseInt(String(hex).replace('#', ''), 16);
-  if (!Number.isFinite(n)) return hex;
-  const to = f < 0 ? 0 : 255;
-  const p = Math.abs(f);
-  const ch = (v) => Math.round(v + (to - v) * p);
-  const r = ch((n >> 16) & 255), g = ch((n >> 8) & 255), b = ch(n & 255);
-  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
-}
 
 function el(name, attrs = {}, parent = null) {
   const e = document.createElementNS(NS, name);
@@ -100,28 +94,6 @@ function el(name, attrs = {}, parent = null) {
   return e;
 }
 
-// 무늬: 사분 [x, y, q] 안 흰 점 + 짧은 홈(사분 바깥 변 한쪽 끝(v=0: 시계 방향 첫 꼭짓점, 1: 둘째)을 가리킴).
-// 돌리면 함께 돌고, 뒤집으면 홈이 반대쪽 꼭짓점을 가리켜 뒤집었는지 보인다.
-function markShapes(mark, S, parent, { faint = false } = {}) {
-  const g0 = { ox: 0, oy: 0, S };
-  const [A, B, C] = triPolygon(mark.slice(0, 3), g0);
-  const cx = (A[0] + B[0] + C[0]) / 3;
-  const cy = (A[1] + B[1] + C[1]) / 3;
-  const T = mark[3] ? B : A;
-  const len = 0.62;
-  const tx = cx + (T[0] - cx) * len;
-  const ty = cy + (T[1] - cy) * len;
-  const g = el('g', { class: 'pp-mark', 'pointer-events': 'none', opacity: faint ? 0.55 : 1 }, parent);
-  el('line', {
-    x1: cx.toFixed(2), y1: cy.toFixed(2), x2: tx.toFixed(2), y2: ty.toFixed(2),
-    stroke: '#fff', 'stroke-width': (S * 0.075).toFixed(2), 'stroke-linecap': 'round',
-  }, g);
-  el('circle', {
-    cx: cx.toFixed(2), cy: cy.toFixed(2), r: (S * 0.085).toFixed(2),
-    fill: '#fff', stroke: 'rgba(40,20,0,.55)', 'stroke-width': (S * 0.025).toFixed(2),
-  }, g);
-  return g;
-}
 
 const prefersReduced = () => {
   try {
@@ -165,9 +137,36 @@ export function createView(svg, puzzle, opts = {}) {
   for (const p of puzzle.pieces) {
     const c = colorOf[p.id];
     const lg = el('linearGradient', { id: `pp-face-${p.id}`, x1: 0, y1: 0, x2: 1, y2: 1 }, defs);
-    el('stop', { offset: '0', 'stop-color': shade(c, 0.28) }, lg);
+    el('stop', { offset: '0', 'stop-color': shade(c, 0.16) }, lg);
     el('stop', { offset: '0.55', 'stop-color': c }, lg);
-    el('stop', { offset: '1', 'stop-color': shade(c, -0.1) }, lg);
+    el('stop', { offset: '1', 'stop-color': shade(c, -0.14) }, lg);
+  }
+  // 금테(조작 안내 그림의 금·청동 테): 모든 조각이 함께 쓰는 그라디언트 하나
+  const gold = el('linearGradient', { id: 'pp-gold', x1: 0, y1: 0, x2: 0.35, y2: 1 }, defs);
+  el('stop', { offset: '0', 'stop-color': '#F8D47A' }, gold);
+  el('stop', { offset: '0.5', 'stop-color': '#E2A944' }, gold);
+  el('stop', { offset: '1', 'stop-color': '#A86A1F' }, gold);
+
+  // 보석 부품을 parent 에 그린다(조각·완성 그림 공용). glass: 완성 그림용 옅은 유리 느낌.
+  const FRAME_STROKE = Math.max(1.2, S * 0.035).toFixed(2);
+  function drawGems(parent, id, tris, { glass = false } = {}) {
+    const c = colorOf[id];
+    const parts = gemParts(tris, S, c);
+    if (!glass) {
+      el('path', {
+        class: 'pp-frame', d: parts.frame, fill: 'url(#pp-gold)', stroke: '#6E400F', 'stroke-width': FRAME_STROKE,
+        'stroke-linejoin': 'round',
+      }, parent);
+    }
+    const gem = el('g', { class: 'pp-gems', 'pointer-events': glass ? 'none' : 'auto' }, parent);
+    for (const f of parts.facets) el('path', { d: f.d, fill: f.fill }, gem);
+    el('path', { class: 'pp-face', d: parts.face, fill: `url(#pp-face-${id})` }, gem);
+    el('path', { d: parts.rim, fill: 'none', stroke: shade(c, -0.55), 'stroke-width': 1, 'stroke-linejoin': 'round', 'pointer-events': 'none' }, gem);
+    el('path', {
+      d: parts.hi, fill: 'none', stroke: 'rgba(255,255,255,0.5)', 'stroke-width': Math.max(0.8, S * 0.02).toFixed(2),
+      'stroke-linejoin': 'round', 'pointer-events': 'none',
+    }, gem);
+    return gem;
   }
 
   // ---- 판 ----
@@ -194,11 +193,13 @@ export function createView(svg, puzzle, opts = {}) {
     const m = elemMarked(start, [...start[0], 0], r.elem);
     const gg = el('g', { transform: `translate(${g.ox + r.dx * S} ${g.oy + r.dy * S})`, 'data-ghost': r.id }, ghostLayer);
     const d = loopsPath(loopsOf(m.tris), S);
+    // 옅은 유리 보석(색 힌트) + 부드러운 윤곽
+    el('path', { d, fill: 'rgba(255,248,225,0.22)' }, gg);
+    drawGems(gg, r.id, m.tris, { glass: true }).setAttribute('opacity', '0.42');
     el('path', {
-      d, fill: colorOf[r.id], 'fill-opacity': 0.5, stroke: shade(colorOf[r.id], -0.35), 'stroke-width': 2,
+      d, fill: 'none', stroke: 'rgba(255,250,232,0.85)', 'stroke-width': 2,
       'stroke-dasharray': `${(S * 0.14).toFixed(1)} ${(S * 0.09).toFixed(1)}`, 'stroke-linejoin': 'round',
     }, gg);
-    markShapes(m.mark, S, gg, { faint: true });
   }
 
   // ---- 조각 ----
@@ -207,36 +208,20 @@ export function createView(svg, puzzle, opts = {}) {
   const anims = new Map(); // id -> {cancel}
   const dragOff = new Map(); // id -> [dx, dy] px
 
-  function buildShape(id, node, tris, mark) {
+  function buildShape(id, node, tris) {
     const anim = node.anim;
     while (anim.firstChild) anim.removeChild(anim.firstChild);
-    const c = colorOf[id];
     const d = loopsPath(loopsOf(tris), S);
+    // 그림자: 흐림 필터 하나를 조각 생성 때만 그린다(끄는 동안은 transform 만 바뀐다)
     node.shadow = el('path', {
       class: 'pp-shadow', d, fill: 'rgba(40,18,0,0.5)', filter: 'url(#pp-blur)', 'pointer-events': 'none',
       transform: SHADOW_REST,
     }, anim);
     el('path', {
-      class: 'pp-edge', d, fill: shade(c, -0.42), transform: `translate(0 ${(S * 0.1).toFixed(2)})`,
+      class: 'pp-edge', d, fill: '#5E3409', stroke: '#5E3409', 'stroke-width': FRAME_STROKE, 'stroke-linejoin': 'round',
+      transform: `translate(0 ${(S * 0.07).toFixed(2)})`,
     }, anim);
-    el('path', {
-      class: 'pp-face', d, fill: `url(#pp-face-${id})`, stroke: shade(c, -0.5), 'stroke-width': 1.6,
-      'stroke-linejoin': 'round',
-    }, anim);
-    const inner = innerCellEdges(tris).map(([a, b]) => `M${(a[0] * S) / 2},${(a[1] * S) / 2}L${(b[0] * S) / 2},${(b[1] * S) / 2}`).join('');
-    if (inner) el('path', { d: inner, fill: 'none', stroke: 'rgba(0,0,0,0.16)', 'stroke-width': 1, 'pointer-events': 'none' }, anim);
-    // 윗면 테두리 안쪽 밝은 선(빛 받는 모서리)
-    const clipId = `pp-clip-${id}`;
-    let clip = svg.querySelector(`#${clipId}`);
-    if (clip) clip.remove();
-    clip = el('clipPath', { id: clipId }, defs);
-    el('path', { d }, clip);
-    el('path', {
-      d, fill: 'none', stroke: 'rgba(255,255,255,0.45)', 'stroke-width': (S * 0.09).toFixed(2),
-      'clip-path': `url(#${clipId})`, transform: `translate(${(S * 0.035).toFixed(2)} ${(S * 0.035).toFixed(2)})`,
-      'pointer-events': 'none',
-    }, anim);
-    markShapes(mark, S, anim);
+    drawGems(anim, id, tris);
   }
 
   function nodeFor(id) {
@@ -292,8 +277,8 @@ export function createView(svg, puzzle, opts = {}) {
       el('rect', { width: CARD, height: CARD, rx: 6, fill: '#FFF8E6', stroke: '#7A4A12', 'stroke-width': 1.5 }, cg);
       if (MOVE_ICON[m]) {
         const ic = el('g', {
-          transform: `translate(3 3) scale(${(CARD - 6) / 24})`, fill: 'none', stroke: m.startsWith('flip') ? '#7A3FB0' : '#B5600A',
-          'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', color: '#B5600A',
+          transform: `translate(3 3) scale(${(CARD - 6) / 24})`, fill: 'none', stroke: QUEUE_INK(m),
+          'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', color: QUEUE_INK(m),
         }, cg);
         ic.innerHTML = MOVE_ICON[m];
       } else {
@@ -315,11 +300,11 @@ export function createView(svg, puzzle, opts = {}) {
     for (const pc of state.pieces) {
       seen.add(pc.id);
       const node = nodeFor(pc.id);
-      const sk = `${JSON.stringify(pc.tris)}|${pc.mark.join(',')}`;
+      const sk = JSON.stringify(pc.tris);
       const moved = !node.pos || node.pos[0] !== pc.pos[0] || node.pos[1] !== pc.pos[1];
       if (sk !== node.shapeKey || moved) cancelAnim(pc.id);
       if (sk !== node.shapeKey) {
-        buildShape(pc.id, node, pc.tris, pc.mark);
+        buildShape(pc.id, node, pc.tris);
         node.shapeKey = sk;
       }
       node.pos = pc.pos;
@@ -468,9 +453,10 @@ export function createView(svg, puzzle, opts = {}) {
       while (wrongLayer.firstChild) wrongLayer.removeChild(wrongLayer.firstChild);
       for (const k of keys || []) {
         const t = String(k).split(',').map(Number);
-        const pts = triPolygon(t, g).map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+        // 보석 면 위만 붉게(칸 사이 금테 틈은 덮지 않는다)
+        const pts = tintTri(t, S).map(([x, y]) => `${(g.ox + x).toFixed(1)},${(g.oy + y).toFixed(1)}`).join(' ');
         el('polygon', {
-          class: 'pp-wrong-tri', points: pts, fill: 'rgba(225,29,42,0.55)', stroke: '#B0101C', 'stroke-width': 1.5,
+          class: 'pp-wrong-tri', points: pts, fill: 'rgba(232,24,40,0.62)', stroke: '#B0101C', 'stroke-width': 1.2,
           'stroke-linejoin': 'round',
         }, wrongLayer);
       }

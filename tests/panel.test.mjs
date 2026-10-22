@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { normalize } from '../src/core/grid.js';
 import { stageSize, fitPuzzle, hudRects, cellBoxes } from '../src/view/geom.js';
-import { placePanel, panelSize, panelButtons, BTN_W, BTN_H, PANEL_MOVES } from '../src/view/panelPlace.js';
+import { placePanel, panelSize, panelButtons, panelCaptions, BTN_W, BTN_H, PANEL_MOVES } from '../src/view/panelPlace.js';
 
 const ROOT = new URL('../', import.meta.url);
 const bank = (s) => JSON.parse(readFileSync(fileURLToPath(new URL(`data/puzzles-s${s}.json`, ROOT)), 'utf8'));
@@ -125,4 +125,23 @@ test('placement is fast (< 15 ms worst) for 5 pieces', () => {
     worst = Math.max(worst, performance.now() - t0);
   }
   assert.ok(worst < 15, `${worst.toFixed(1)}ms`);
+});
+
+test('group captions: 뒤집기 · 시계 방향 · 시계 반대 방향 above each group, inside the panel, not on any button', () => {
+  for (const layout of ['wide', 'tall']) {
+    for (const hidden of [false, true]) {
+      const { w, h } = panelSize(layout);
+      const btns = panelButtons(layout, hidden);
+      const caps = panelCaptions(layout, hidden);
+      assert.deepEqual(caps.map((c) => c.text), ['뒤집기', '시계 방향', '시계 반대 방향']);
+      for (const c of caps) {
+        const r = { l: c.x, t: c.y, r: c.x + c.w, b: c.y + c.h };
+        assert.ok(c.x >= 0 && c.y >= 0 && r.r <= w && r.b <= h, `${layout} ${c.group} inside`);
+        for (const b of btns) assert.ok(!hit(r, { l: b.x, t: b.y, r: b.x + b.w, b: b.y + b.h }), `${layout} ${c.group} on ${b.move || b.action}`);
+        const first = btns.find((b) => b.group === c.group);
+        assert.equal(c.y + c.h, Math.min(...btns.filter((b) => b.group === c.group).map((b) => b.y)));
+        assert.ok(first.x >= c.x && first.x < c.x + c.w);
+      }
+    }
+  }
 });

@@ -5,6 +5,7 @@
 //   4단계: "이동 N번 안에 맞혀 보세요" + 지금 이동 수
 import { normalize } from '../core/grid.js';
 import { loopsOf, loopsPath } from '../view/geom.js';
+import { shade, gemParts } from '../view/gems.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const SHORT = ['', '완성 모양', '판 모양', '이동 조건', '최소 이동'];
@@ -23,17 +24,16 @@ const el = (tag, cls, text) => {
   return e;
 };
 
-function shade(hex, f) {
-  const n = parseInt(String(hex).replace('#', ''), 16);
-  if (!Number.isFinite(n)) return hex;
-  const to = f < 0 ? 0 : 255;
-  const p = Math.abs(f);
-  const ch = (v) => Math.round(v + (to - v) * p);
-  return `#${((1 << 24) | (ch((n >> 16) & 255) << 16) | (ch((n >> 8) & 255) << 8) | ch(n & 255)).toString(16).slice(1)}`;
-}
 
-// 삼각형 묶음 → 작은 svg(칸 10 단위). box: 가로·세로 최대(cqw).
-function miniSvg(tris, { fill, stroke, box, cls, label }) {
+const svgEl = (name, attrs, parent) => {
+  const e = document.createElementNS(NS, name);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  parent.append(e);
+  return e;
+};
+
+// 삼각형 묶음 → 작은 svg(칸 10 단위). box: 가로·세로 최대(cqw). gem: 조각 색이면 판 위 조각과 같은 금테 보석 모양.
+function miniSvg(tris, { fill, stroke, box, cls, label, gem = null }) {
   const t = normalize(tris);
   let w = 0, h = 0;
   for (const [x, y] of t) { w = Math.max(w, x + 1); h = Math.max(h, y + 1); }
@@ -46,6 +46,14 @@ function miniSvg(tris, { fill, stroke, box, cls, label }) {
   const k = Math.min(box[0] / w, box[1] / h);
   svg.style.width = `${(w * k).toFixed(2)}cqw`;
   svg.style.height = `${(h * k).toFixed(2)}cqw`;
+  if (gem) {
+    const parts = gemParts(t, U, gem);
+    svgEl('path', { d: parts.frame, fill: '#D29A3C', stroke: '#6E400F', 'stroke-width': 0.6, 'stroke-linejoin': 'round' }, svg);
+    for (const f of parts.facets) svgEl('path', { d: f.d, fill: f.fill }, svg);
+    svgEl('path', { d: parts.face, fill: gem }, svg);
+    svgEl('path', { d: parts.rim, fill: 'none', stroke: shade(gem, -0.55), 'stroke-width': 0.3 }, svg);
+    return svg;
+  }
   const path = document.createElementNS(NS, 'path');
   path.setAttribute('d', loopsPath(loopsOf(t), U));
   path.setAttribute('fill', fill);
@@ -73,7 +81,7 @@ function condRow(piece, kind) {
   const row = el('div', 'cond');
   row.dataset.piece = piece.id;
   const c = piece.color || '#4A90D9';
-  row.append(miniSvg(piece.start, { fill: c, stroke: shade(c, -0.45), box: [3, 3] }));
+  row.append(miniSvg(piece.start, { box: [3, 3], gem: c }));
   const t = el('div', 'cond-t');
   t.append('이 조각은 ', ...COND_TEXT[kind].map((x) => (Array.isArray(x) ? el('em', x[1] || '', x[0]) : x)));
   row.append(t);

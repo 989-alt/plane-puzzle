@@ -23,11 +23,14 @@ export const CW_MOVES = ['cw90', 'cw180', 'cw270'];
 export const CCW_MOVES = ['ccw90', 'ccw180', 'ccw270'];
 export const PANEL_MOVES = [...FLIP_MOVES, ...CW_MOVES, ...CCW_MOVES];
 
+export const CAP_WIDE = 16; // 묶음 이름(뒤집기·시계 방향·시계 반대 방향) 한 줄 높이(두 줄 모양)
+export const CAP_TALL = 28; // 두 칸 모양은 칸이 좁아 이름이 두 줄
 const RUN6 = 6 * BTN_W + 4 * GAP + GROUP; // 버튼 3+3 한 줄 길이
 const SIZE = {
-  wide: { w: 2 * INSET + RUN6, h: 2 * INSET + 2 * BTN_H + LINE },
-  tall: { w: 2 * INSET + 2 * BTN_W + LINE, h: 2 * INSET + 6 * BTN_H + 4 * GAP + GROUP },
+  wide: { w: 2 * INSET + RUN6, h: 2 * INSET + 2 * BTN_H + LINE + 2 * CAP_WIDE },
+  tall: { w: 2 * INSET + 2 * BTN_W + LINE, h: 2 * INSET + 6 * BTN_H + 4 * GAP + GROUP + 2 * CAP_TALL },
 };
+export const GROUP_CAPTION = { flip: '뒤집기', cw: '시계 방향', ccw: '시계 반대 방향' };
 
 export function panelSize(layout = 'wide') {
   return { ...SIZE[layout] };
@@ -43,13 +46,28 @@ export function panelButtons(layout = 'wide', hidden = false) {
   const line2 = [...CW_MOVES.map((m) => ({ move: m, group: 'cw' })), ...CCW_MOVES.map((m) => ({ move: m, group: 'ccw' }))];
   const out = [];
   if (layout === 'tall') {
-    line1.forEach((b, k) => out.push({ ...b, x: INSET, y: INSET + alongV(k, 4), w: BTN_W, h: BTN_H }));
-    line2.forEach((b, k) => out.push({ ...b, x: INSET + BTN_W + LINE, y: INSET + alongV(k, 3), w: BTN_W, h: BTN_H }));
+    const C = CAP_TALL;
+    line1.forEach((b, k) => out.push({ ...b, x: INSET, y: INSET + C + alongV(k, 4), w: BTN_W, h: BTN_H }));
+    line2.forEach((b, k) => out.push({ ...b, x: INSET + BTN_W + LINE, y: INSET + C + alongV(k, 3) + (k >= 3 ? C : 0), w: BTN_W, h: BTN_H }));
   } else {
-    line1.forEach((b, k) => out.push({ ...b, x: INSET + along(k, 4), y: INSET, w: BTN_W, h: BTN_H }));
-    line2.forEach((b, k) => out.push({ ...b, x: INSET + along(k, 3), y: INSET + BTN_H + LINE, w: BTN_W, h: BTN_H }));
+    const C = CAP_WIDE;
+    line1.forEach((b, k) => out.push({ ...b, x: INSET + along(k, 4), y: INSET + C, w: BTN_W, h: BTN_H }));
+    line2.forEach((b, k) => out.push({ ...b, x: INSET + along(k, 3), y: INSET + 2 * C + BTN_H + LINE, w: BTN_W, h: BTN_H }));
   }
   return out;
+}
+
+// 묶음 이름 자리(패널 왼쪽 위 기준 px): 각 묶음 첫 버튼 바로 위, 묶음 너비. {group, text, x, y, w, h}
+export function panelCaptions(layout = 'wide', hidden = false) {
+  const btns = panelButtons(layout, hidden);
+  const C = layout === 'tall' ? CAP_TALL : CAP_WIDE;
+  return ['flip', 'cw', 'ccw'].map((group) => {
+    const gb = btns.filter((b) => b.group === group);
+    const x = Math.min(...gb.map((b) => b.x));
+    const y = Math.min(...gb.map((b) => b.y)) - C;
+    const w = Math.max(...gb.map((b) => b.x + b.w)) - x;
+    return { group, text: GROUP_CAPTION[group], x, y, w, h: C };
+  });
 }
 
 const overlap = (a, b) => {

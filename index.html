@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>도형 이동 퍼즐</title>
+<title>한 판! 돌리고 뒤집기</title>
 <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="assets/fonts/Jua-Regular.subset.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/Pretendard-ExtraBold.subset.woff2" as="font" type="font/woff2" crossorigin>
@@ -34,17 +34,17 @@
  <section id="screen-title" class="screen on" aria-label="시작 화면">
   <div class="bg"></div>
   <div class="frame">
-   <span class="chip t-chip-l"><i class="dot"></i>도형 이동 퍼즐</span>
+   <span class="chip t-chip-l"><i class="dot"></i>한 판! 돌리고 뒤집기</span>
    <span class="chip t-chip-r"><i class="dot"></i>3·4학년 · 평면도형의 이동</span>
    <h1 class="logo" style="margin:0">
-    <span class="lg blue" data-t="도형 이동"><span>도형 이동</span></span>
-    <span class="lg" data-t="퍼즐"><span>퍼즐</span></span>
+    <span class="lg blue" data-t="한 판!"><span>한 판!</span></span>
+    <span class="lg" data-t="돌리고 뒤집기"><span>돌리고 뒤집기</span></span>
    </h1>
    <div class="sparkle" style="left:24%;top:14%"></div><div class="sparkle" style="left:73%;top:36%;transform:scale(.7);animation-delay:-1.2s"></div>
    <div class="pill t-pill">조각을 밀고, 뒤집고, 돌려서 판을 채워요!</div>
    <button class="gold" id="startBtn" type="button"><svg><use href="#i-play"/></svg>시작</button>
    <button class="ghostbtn" id="howBtn" type="button">조작 방법 보기</button>
-   <span class="chip t-best" id="bestChip"><svg><use href="#i-trophy"/></svg><span id="bestText">내 최고 기록 0점 · 마당 1단계</span></span>
+   <span class="chip t-best" id="bestChip"><svg><use href="#i-trophy"/></svg><span id="bestText">내 최고 기록 0점 · 내 마당 빈 마당</span></span>
    <img class="t-cubi" src="assets/img/cubi-idle.webp" alt="마스코트 큐비">
   </div>
  </section>
@@ -60,7 +60,7 @@
    </div>
    <div class="yard" id="yardBadge" data-ui="yard">
     <span class="yard-ic"><svg><use href="#i-home"/></svg></span>
-    <div><small id="yardNext">내 마당 · 다음 단계까지 5문제</small><b id="yardName">빈 마당</b><div class="bar"><i id="yardBar"></i></div></div>
+    <div><small id="yardNext">내 마당 · 마당이 자라기까지 5문제</small><b id="yardName">빈 마당</b><div class="bar"><i id="yardBar"></i></div></div>
    </div>
    <div class="mission" data-ui="mission"><span id="missionText">조각을 옮겨 판을 빈틈없이 채워요!</span></div>
    <div class="score" data-ui="score"><small>점수</small><b id="scoreText">0</b></div>
@@ -123,7 +123,7 @@
 
 <script>
 // 모듈을 못 쓰는 옛 브라우저 안내(일반 스크립트, 옛 문법만). 지원해도 불러온 뒤 4초 안에
-// 게임 모듈이 준비(window.__ppReady)되지 않으면 같은 안내를 띄운다.
+// 게임 모듈이 돌기 시작(window.__ppBooted)하지 않으면 같은 안내를 띄운다(글꼴 대기로 늦는 것은 괜찮다).
 (function () {
   function show() {
     var el = document.getElementById('oldBrowser');
@@ -132,7 +132,7 @@
   var S = window.HTMLScriptElement;
   if (!(S && 'noModule' in S.prototype)) { show(); return; }
   window.addEventListener('load', function () {
-    setTimeout(function () { if (!window.__ppReady) show(); }, 4000);
+    setTimeout(function () { if (!window.__ppBooted && !window.__ppReady) show(); }, 4000);
   });
 })();
 </script>

@@ -23,7 +23,7 @@ export function renderHud({ stage = 1, levelName: name, streak = 0, mult = 1, sc
   $('#comboText').textContent = `${streak}연속 ${fmtMult(mult)}`;
   $('#scoreText').textContent = Number(score).toLocaleString('ko-KR');
   $('#yardName').textContent = ISLAND_NAMES[yard] ?? '';
-  $('#yardNext').textContent = toNext == null ? '내 마당 · 가장 큰 마당이에요' : `내 마당 · 다음 단계까지 ${toNext}문제`;
+  $('#yardNext').textContent = toNext == null ? '내 마당 · 가장 큰 마당이에요' : `내 마당 · 마당이 자라기까지 ${toNext}문제`;
   const done = toNext == null ? PER_YARD : PER_YARD - toNext;
   $('#yardBar').style.width = `${Math.max(0, Math.min(1, done / PER_YARD)) * 100}%`;
 }

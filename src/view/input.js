@@ -6,7 +6,7 @@ import { translate } from '../core/grid.js';
 import { canPlace } from '../core/board.js';
 import { revealResult } from '../core/layout.js';
 import { screenToCell, screenToTri, triCentroid, pieceRect, fingerOverBoard } from './geom.js';
-import { placePanel, panelButtons, panelSize } from './panelPlace.js';
+import { placePanel, panelButtons, panelSize, panelCaptions } from './panelPlace.js';
 import { MOVE_ICON, MOVE_LABEL, MOVE_SHORT } from './render.js';
 
 const DRAG_PX = 8; // 이보다 많이 움직여야 끌기(아니면 탭)
@@ -35,6 +35,10 @@ const PANEL_CSS = `
 .pp-panel button[disabled]{opacity:.45;cursor:default}
 .pp-panel svg{width:30px;height:30px;pointer-events:none;flex:none}
 .pp-panel span{pointer-events:none;white-space:nowrap}
+.pp-panel .pp-cap{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;
+  word-break:keep-all;font:700 13px/1.05 Jua,Pretendard,system-ui,sans-serif;color:#FFE9A8;letter-spacing:-.2px}
+.pp-panel .pp-cap[data-group="flip"]{color:#E6D2FF}
+.pp-panel .pp-cap[data-group="ccw"]{color:#BFE9FF}
 `;
 
 function ensureStyle(doc) {
@@ -78,6 +82,14 @@ export function attachInput(view, getState, dispatch, opts = {}) {
     btn.innerHTML = `${iconSvg(name)}<span>${MOVE_SHORT[name]}</span>`;
     panel.appendChild(btn);
   }
+  for (const c of panelCaptions('wide', hidden)) {
+    const cap = doc.createElement('span');
+    cap.className = 'pp-cap';
+    cap.dataset.group = c.group;
+    cap.setAttribute('aria-hidden', 'true');
+    cap.textContent = c.text;
+    panel.appendChild(cap);
+  }
   stage.appendChild(panel);
 
   let selected = null;
@@ -96,6 +108,13 @@ export function attachInput(view, getState, dispatch, opts = {}) {
       btn.style.top = `${b.y - 2}px`;
       btn.style.width = `${b.w}px`;
       btn.style.height = `${b.h}px`;
+    }
+    for (const c of panelCaptions(layout, hidden)) {
+      const cap = panel.querySelector(`.pp-cap[data-group="${c.group}"]`);
+      cap.style.left = `${c.x - 2}px`;
+      cap.style.top = `${c.y - 2}px`;
+      cap.style.width = `${c.w}px`;
+      cap.style.height = `${c.h}px`;
     }
   }
 
@@ -305,6 +324,8 @@ export function attachInput(view, getState, dispatch, opts = {}) {
     if (btn && !btn.disabled) press(btn);
   };
   const onKey = (e) => { if (e.key === 'Escape') closePanel(); };
+  // 무대·HUD(판 svg 밖)를 누르면 패널을 닫는다. 패널 자체는 onPanelDown 이 전파를 막는다.
+  const onStageDown = (e) => { if (!svg.contains(e.target) && !panel.contains(e.target)) closePanel(); };
 
   svg.addEventListener('pointerdown', onDown);
   svg.addEventListener('pointermove', onMove);
@@ -313,6 +334,7 @@ export function attachInput(view, getState, dispatch, opts = {}) {
   svg.addEventListener('lostpointercapture', onCancel);
   svg.addEventListener('contextmenu', noMenu);
   stage.addEventListener('contextmenu', noMenu);
+  stage.addEventListener('pointerdown', onStageDown);
   panel.addEventListener('pointerdown', onPanelDown);
   panel.addEventListener('click', onPanelClick);
   doc.addEventListener('keydown', onKey);
@@ -342,6 +364,7 @@ export function attachInput(view, getState, dispatch, opts = {}) {
       svg.removeEventListener('lostpointercapture', onCancel);
       svg.removeEventListener('contextmenu', noMenu);
       stage.removeEventListener('contextmenu', noMenu);
+      stage.removeEventListener('pointerdown', onStageDown);
       doc.removeEventListener('keydown', onKey);
       panel.remove();
     },

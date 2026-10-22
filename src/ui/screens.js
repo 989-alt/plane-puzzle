@@ -99,7 +99,7 @@ export function onPortrait(cb) {
 
 export function setTitleStats({ best = 0, yard = 0 } = {}) {
   const t = $('#bestText');
-  if (t) t.textContent = `내 최고 기록 ${Number(best).toLocaleString('ko-KR')}점 · 마당 ${yard + 1}단계`;
+  if (t) t.textContent = `내 최고 기록 ${Number(best).toLocaleString('ko-KR')}점 · 내 마당 ${ISLAND_NAMES[yard] ?? ISLAND_NAMES[0]}`;
 }
 
 function chip(text, cls) {

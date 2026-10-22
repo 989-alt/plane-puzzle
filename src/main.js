@@ -373,7 +373,7 @@ function win() {
   const toNext = toNextIsland(progress.solvedTotal);
   const nextHint = res.promoted
     ? `다음: ${levelName(progress.stage)}`
-    : (toNext == null ? '가장 큰 마당을 지었어요' : `다음 단계까지 ${toNext}문제`);
+    : (toNext == null ? '가장 큰 마당을 지었어요' : `마당이 자라기까지 ${toNext}문제`);
   showWin({
     gained: res.gained, base: 100, speed: Math.max(0, 60 - Math.floor(seconds)),
     streak: progress.streak, mult: multiplier(progress.streak), usedEasy, bonus: res.bonus,
@@ -660,5 +660,8 @@ if (E2E) {
   };
 }
 
+// 모듈이 돌기 시작했다: 옛 브라우저 안내는 이 표시를 본다(글꼴을 기다리느라 늦어져도 안내를 띄우지 않는다).
+window.__ppBooted = true;
 await document.fonts?.ready;
 window.__ppReady = true;
+{ const ob = document.getElementById('oldBrowser'); if (ob) { ob.hidden = true; ob.style.display = ''; } }

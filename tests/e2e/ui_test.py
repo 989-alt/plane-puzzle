@@ -117,7 +117,7 @@ def title_to_tutorial_first_visit(browser, base):
     page.wait_for_timeout(400)
     esc_closed = not visible(page, "#screen-tutorial") and visible(page, "#screen-game")
     check("title_to_tutorial_first_visit",
-          chip == "도형 이동 퍼즐" and "도형 이동" in logo and "퍼즐" in logo and first
+          chip == "한 판! 돌리고 뒤집기" and "한 판!" in logo and "돌리고 뒤집기" in logo and first
           and heads == ["1. 밀기", "2. 뒤집기", "3. 돌리기"]
           and imgs == ["assets/img/tut-move.webp", "assets/img/tut-flip.webp", "assets/img/tut-turn.webp"]
           and checked and in_game and seen == "true" and not second_tut and second_game and help_tut
@@ -420,7 +420,7 @@ def screens_shots(browser, base):
     page.goto(f"{base}/index.html?e2e")
     ready(page)
     page.evaluate("""() => __ppUi.showWin({gained: 50, base: 100, speed: 0, streak: 1, mult: 1, usedEasy: true,
-        bonus: 0, yardBefore: 2, yardAfter: 2, nextHint: '다음 단계까지 3문제'})""")
+        bonus: 0, yardBefore: 2, yardAfter: 2, nextHint: '마당이 자라기까지 3문제'})""")
     page.wait_for_timeout(300)
     shot(page, "win-reduced")
     conf_off = page.evaluate("() => document.querySelectorAll('#conf .conf').length")
@@ -447,8 +447,52 @@ def no_external_urls(browser, base):
     ctx.close()
 
 
+def slow_fonts_no_old_browser(browser, base):
+    """글꼴 준비가 4초보다 늦어도(저사양) 옛 브라우저 안내가 뜨지 않는다: 모듈이 돌기 시작하면 __ppBooted."""
+    ctx, page, errors = new_page(browser, SIZES[0])
+    page.add_init_script("""(() => { const slow = new Promise((r) => setTimeout(r, 5500));
+        try { Object.defineProperty(document.fonts, 'ready', { get: () => slow }); } catch (e) {} })()""")
+    page.goto(f"{base}/index.html?e2e")
+    page.wait_for_timeout(5000)
+    mid_hidden = not visible(page, "#oldBrowser")
+    booted = page.evaluate("window.__ppBooted === true")
+    page.wait_for_function("() => window.__ppReady === true", timeout=15000)
+    page.wait_for_timeout(200)
+    end_hidden = not visible(page, "#oldBrowser")
+    check("slow_fonts_no_old_browser", mid_hidden and booted and end_hidden and not errors,
+          f"mid_hidden={mid_hidden} booted={booted} end_hidden={end_hidden} errors={errors[:2]}")
+    ctx.close()
+
+
+def stage_tap_closes_panel(browser, base):
+    """판 svg 밖(HUD·무대)을 누르면 이동 패널이 닫힌다. 패널 위(묶음 이름)를 눌러도 닫히지 않는다.
+    패널 묶음 이름: 뒤집기 · 시계 방향 · 시계 반대 방향."""
+    ctx, page, errors = new_page(browser, SIZES[0])
+    into_game(page, base)
+    pid = page.evaluate("__pp.state.pieces[0].id")
+    xy = page.evaluate("(id) => __pp.pieceScreenXY(id)", pid)
+    page.mouse.click(xy["x"], xy["y"])
+    page.wait_for_timeout(200)
+    opened = page.evaluate("__pp.panelState().open")
+    caps = page.evaluate("[...document.querySelectorAll('#pp-panel .pp-cap')].map((e) => e.textContent)")
+    cap = page.evaluate("(() => { const r = document.querySelector('#pp-panel .pp-cap[data-group=ccw]').getBoundingClientRect();"
+                        " return {x: r.x + r.width / 2, y: r.y + r.height / 2}; })()")
+    page.mouse.click(cap["x"], cap["y"])
+    page.wait_for_timeout(150)
+    still = page.evaluate("__pp.panelState().open")
+    chip = page.evaluate("(() => { const r = document.querySelector('#stageChip').getBoundingClientRect();"
+                         " return {x: r.x + r.width / 2, y: r.y + r.height / 2}; })()")
+    page.mouse.click(chip["x"], chip["y"])
+    page.wait_for_timeout(150)
+    closed = not page.evaluate("__pp.panelState().open")
+    check("stage_tap_closes_panel", opened and still and closed and caps == ["뒤집기", "시계 방향", "시계 반대 방향"] and not errors,
+          f"opened={opened} still={still} closed={closed} caps={caps} errors={errors[:2]}")
+    ctx.close()
+
+
 TESTS = (title_to_tutorial_first_visit, tutorial_input_kind, every_puzzle_layout, stage_screens, portrait_warning,
-         buttons_min_48px, no_zoom_or_callout, screens_shots, no_external_urls)
+         buttons_min_48px, no_zoom_or_callout, screens_shots, no_external_urls, slow_fonts_no_old_browser,
+         stage_tap_closes_panel)
 
 
 def main():
