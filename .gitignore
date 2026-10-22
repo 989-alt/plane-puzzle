@@ -1,0 +1,4 @@
+.superpowers/
+node_modules/
+tests/e2e/out/
+__pycache__/
