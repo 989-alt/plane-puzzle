@@ -112,6 +112,13 @@ export function triCentroid(tri, g) {
   return [(p[0][0] + p[1][0] + p[2][0]) / 3, (p[0][1] + p[1][1] + p[2][1]) / 3];
 }
 
+// 손가락 점(무대 px)이 그림 속 판(금테 포함) 위인지. 숨김 모드에서 쌓인 이동을 드러내는 조건은 이 점 하나뿐이다
+// (조각 사각형이 판에 걸친 것만으로는 드러내지 않는다 — 판 옆에 놓으면 줄을 그대로 두고 트레이로).
+export function fingerOverBoard(pt, g) {
+  const o = g.outer;
+  return pt[0] >= o.l && pt[0] <= o.r && pt[1] >= o.t && pt[1] <= o.b;
+}
+
 export function screenToCell(px, py, g) {
   return [Math.floor((px - g.ox) / g.S), Math.floor((py - g.oy) / g.S)];
 }

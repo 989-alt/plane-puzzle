@@ -5,7 +5,7 @@
 import { translate } from '../core/grid.js';
 import { canPlace } from '../core/board.js';
 import { revealResult } from '../core/layout.js';
-import { screenToCell, screenToTri, triCentroid, pieceRect } from './geom.js';
+import { screenToCell, screenToTri, triCentroid, pieceRect, fingerOverBoard } from './geom.js';
 import { placePanel, panelButtons, panelSize } from './panelPlace.js';
 import { MOVE_ICON, MOVE_LABEL, MOVE_SHORT } from './render.js';
 
@@ -248,10 +248,6 @@ export function attachInput(view, getState, dispatch, opts = {}) {
     }
   }
 
-  // 그림 속 판(금테 포함) 위인지(무대 px 점 또는 사각형).
-  const outer = g.outer;
-  const overBoard = (pt, rect) => (pt[0] >= outer.l && pt[0] <= outer.r && pt[1] >= outer.t && pt[1] <= outer.b)
-    || (rect && rect.l < outer.r && outer.l < rect.r && rect.t < outer.b && outer.t < rect.b);
 
   // 끌기 끝: 칸에 맞춰 놓는다. 판에 들어가면 판, 아니면 트레이의 가장 가까운 빈 자리(core/layout.js).
   function land() {
@@ -267,8 +263,8 @@ export function attachInput(view, getState, dispatch, opts = {}) {
     const at = snapAt(tl);
     const pt = [Math.min(Math.max(d.last[0], 0), g.W - 0.01), Math.min(Math.max(d.last[1], 0), g.H - 0.01)];
     const finger = screenToCell(pt[0], pt[1], g);
-    const rect = pieceRect(pc.tris, at, g);
-    const over = overBoard(pt, rect);
+    // 숨김 모드 드러내기: 손가락 점 자체가 판 위일 때만(조각 사각형이 판에 걸친 것만으로는 아니다).
+    const over = fingerOverBoard(pt, g);
     if (queued(pc) && over) {
       const res = revealResult(pc.tris, pc.mark, pc.queue, d.grab);
       const spot = [finger[0] - res.grab[0], finger[1] - res.grab[1]];
