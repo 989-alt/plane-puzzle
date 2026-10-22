@@ -93,8 +93,9 @@ function normalizeOrder(board) {
   return [...board].sort((a, b) => a[1] - b[1] || a[0] - b[0] || a[2] - b[2]);
 }
 
-// 돌리기 없이 만들 수 있는 원소(이동 0번 또는 뒤집기 1번).
-const NO_TURN = new Set(['id', 'fx', 'fx_r180']);
+// 돌리기 버튼 없이 뒤집기 버튼만으로 만들 수 있는 원소: 그대로(id), 왼쪽·오른쪽(fx), 위쪽·아래쪽(fx_r180),
+// 그리고 두 뒤집기를 함께 한 것(r180 = 180° 돌리기와 같음, 교과서가 가르치는 같음).
+const NO_TURN = new Set(['id', 'fx', 'fx_r180', 'r180']);
 
 // start에서 해답 기록 r의 모양을 내는 모든 D4 원소.
 function elemsFor(start, r) {
@@ -103,7 +104,7 @@ function elemsFor(start, r) {
 }
 
 // 조각마다 {flip, turn}. 모든 저장 해답에서 참일 때만 true(해답이 없으면 false).
-// flip = 그 모양을 내는 모든 원소가 반사(fx*), turn = 그 모양을 id·fx·fx_r180으로 만들 수 없음.
+// flip = 그 모양을 내는 모든 원소가 반사(fx*), turn = 그 모양을 뒤집기만으로(id·fx·fx_r180·r180) 만들 수 없음.
 export function needs(puzzle) {
   const result = {};
   const sols = puzzle.solutions;

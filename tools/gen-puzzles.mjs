@@ -8,7 +8,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { normalize, translate, key, connected } from '../src/core/grid.js';
-import { D4, applyElem, orientations, LIBRARY } from '../src/core/pieces.js';
+import { D4, applyElem, orientations, LIBRARY, pieceMoves } from '../src/core/pieces.js';
 import { solve, needs, minMovesOf } from '../src/core/solver.js';
 
 const SEED = 20261022;
@@ -25,12 +25,13 @@ const MAX_ATTEMPTS = 200000; // 단계마다 판 만들기 시도 상한(넘으�
 // 조각 색 6가지(조각마다 다르게). 밝은 나무·보석 타일 느낌의 채도 있는 색.
 export const PALETTE = ['#E8574B', '#F29E38', '#F2CD3C', '#5BB860', '#4A8FD9', '#9A6AD0'];
 
-// 단계별 규칙(브리프): 조각 수, 삼각형 조각 수(1·2단계는 칸 조각만), 4단계 최소 이동 수 범위.
+// 단계별 규칙(브리프 + 리뷰 결정): 조각 수, 삼각형 조각 수(1·2단계는 칸 조각만), 최소 이동 수 띠,
+// maxDiag = 해답마다 대각선 뒤집기(fx_r90·fx_r270만 가능해 2번 이동이 드는) 조각 수 상한.
 export const STAGE_RULES = {
-  1: { minPieces: 3, maxPieces: 3, minTri: 0, maxTri: 0 },
-  2: { minPieces: 3, maxPieces: 4, minTri: 0, maxTri: 0 },
-  3: { minPieces: 3, maxPieces: 4, minTri: 1, maxTri: 2 },
-  4: { minPieces: 4, maxPieces: 5, minTri: 1, maxTri: 2, minMoves: [3, 8] },
+  1: { minPieces: 3, maxPieces: 3, minTri: 0, maxTri: 0, minMoves: [2, 3], maxDiag: 1 },
+  2: { minPieces: 3, maxPieces: 4, minTri: 0, maxTri: 0, minMoves: [3, 4] },
+  3: { minPieces: 3, maxPieces: 4, minTri: 1, maxTri: 2, minMoves: [3, 5] },
+  4: { minPieces: 4, maxPieces: 5, minTri: 1, maxTri: 2, minMoves: [5, 8] },
 };
 
 // ---- 시드 난수 (큐브 왕국 gen-puzzles.mjs와 같은 mulberry32) ----
@@ -105,8 +106,9 @@ export function holeFree(tris) {
 // ---- 조각 고르기 ----
 // 같은 라이브러리 조각은 한 문제에 한 번만(바꿔 끼우기가 해답 수를 부풀리므로), 대칭 조각은 1개 이하.
 // n = 조각 수(단계 범위 안에서 문제 번호마다 번갈아 정해 고르게 나눈다).
+const PICK_TRIES = 1000;
 function pickPieces(rng, rule, n) {
-  for (;;) {
+  for (let tries = 0; tries < PICK_TRIES; tries++) {
     const t = rng.randInt(rule.minTri, Math.min(rule.maxTri, n - 1));
     const chosen = [
       ...rng.shuffle([...TRI_LIB]).slice(0, t),
@@ -114,6 +116,7 @@ function pickPieces(rng, rule, n) {
     ];
     if (chosen.filter((p) => p.symmetric).length <= 1) return rng.shuffle(chosen);
   }
+  throw new Error(`pickPieces: no piece set with <= 1 symmetric piece after ${PICK_TRIES} tries (n=${n})`);
 }
 
 // ---- 판 만들기: 조각을 하나씩 변을 맞대 붙인다 ----
@@ -149,6 +152,14 @@ function assemble(rng, libs) {
     for (const q of c.t) taken.add(k1(q));
   }
   return placed;
+}
+
+// 해답 하나에서 대각선 뒤집기(2번 이동만 가능)가 필요한 조각 수.
+function diagCount(pieces, sol) {
+  return sol.filter((r) => {
+    const start = pieces.find((p) => p.id === r.id).start;
+    return pieceMoves(start, applyElem(start, r.elem)) === 2;
+  }).length;
 }
 
 // 해답 기록이 가리키는 놓인 삼각형.
@@ -189,7 +200,8 @@ function makePuzzle(rng, stage, libs, placedShapes) {
     if (!nd.some((x) => x.flip) || !nd.some((x) => x.turn)) continue;
     const minMoves = minMovesOf(pz);
     if (!Number.isFinite(minMoves)) continue;
-    if (rule.minMoves && (minMoves < rule.minMoves[0] || minMoves > rule.minMoves[1])) continue;
+    if (minMoves < rule.minMoves[0] || minMoves > rule.minMoves[1]) continue;
+    if (rule.maxDiag !== undefined && solutions.some((sol) => diagCount(pieces, sol) > rule.maxDiag)) continue;
     const cards = stage === 3 ? cardsFor(pz) : {};
     if (stage === 3 && Object.keys(cards).length === 0) continue;
     // 만든 배치(거꾸로 만들기의 원래 답)가 해답 목록에 들어 있는지 스스로 확인.

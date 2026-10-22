@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { key, normalize, translate, connected } from '../src/core/grid.js';
-import { D4, applyElem, LIBRARY, MOVES, applyMove, pieceMoves } from '../src/core/pieces.js';
+import { D4, applyElem, LIBRARY, MOVES, MIN_MOVES, applyMove, pieceMoves } from '../src/core/pieces.js';
 import { isSolved } from '../src/core/board.js';
 import { solve, needs, minMovesOf } from '../src/core/solver.js';
 import { PALETTE, STAGE_RULES, generateAll, fileText } from '../tools/gen-puzzles.mjs';
-import { auditPuzzle, auditBank, buttonDistance } from '../tools/audit-puzzles.mjs';
+import { auditPuzzle, auditBank, buttonDistance, flipOnlyReach } from '../tools/audit-puzzles.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const STAGES = [1, 2, 3, 4];
@@ -24,6 +24,24 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 // 조각 수·삼각형 조각 수 기대값(브리프 그대로).
 const PIECES = { 1: [3, 3], 2: [3, 4], 3: [3, 4], 4: [4, 5] };
 const TRI = { 1: [0, 0], 2: [0, 0], 3: [1, 2], 4: [1, 2] };
+// 단계별 최소 이동 수 띠(컨트롤러 결정). 1단계는 대각선 뒤집기(2번 이동만 가능한 조각)가 해답마다 1개 이하.
+const BANDS = { 1: [2, 3], 2: [3, 4], 3: [3, 5], 4: [5, 8] };
+const FLIPS = ['flipUp', 'flipDown', 'flipLeft', 'flipRight'];
+
+// 뒤집기 버튼만으로 from에서 닿을 수 있는 모양 키 집합(needs와 따로 계산).
+function flipReach(from) {
+  const seen = new Set([key(normalize(from))]);
+  const queue = [normalize(from)];
+  for (let i = 0; i < queue.length; i++) {
+    for (const m of FLIPS) {
+      const nx = applyMove(queue[i], m);
+      if (!seen.has(key(nx))) { seen.add(key(nx)); queue.push(nx); }
+    }
+  }
+  return seen;
+}
+const targetOf = (pz, r) => normalize(applyElem(pz.pieces.find((p) => p.id === r.id).start, r.elem));
+const flipOnly = (pz, r) => flipReach(pz.pieces.find((p) => p.id === r.id).start).has(key(targetOf(pz, r)));
 
 test('generator stage rules match the brief', () => {
   for (const s of STAGES) {
@@ -118,11 +136,37 @@ test('every solution needs a flip on some piece and a turn on some piece', () =>
   }
 });
 
-test('minMoves matches minMovesOf for every puzzle; stage 4 is 3~8', () => {
+test('minMoves matches minMovesOf; per-stage bands s1 2~3, s2 3~4, s3 3~5, s4 5~8', () => {
   for (const pz of all) {
     assert.ok(Number.isInteger(pz.minMoves), `${pz.id} minMoves integer`);
     assert.equal(pz.minMoves, minMovesOf(pz), pz.id);
-    if (pz.stage === 4) assert.ok(pz.minMoves >= 3 && pz.minMoves <= 8, `${pz.id} minMoves ${pz.minMoves}`);
+    const [lo, hi] = BANDS[pz.stage];
+    assert.ok(pz.minMoves >= lo && pz.minMoves <= hi, `${pz.id} minMoves ${pz.minMoves} outside ${lo}~${hi}`);
+  }
+  for (const [s, [lo, hi]] of Object.entries(BANDS)) assert.deepEqual(STAGE_RULES[s].minMoves, [lo, hi], `STAGE_RULES ${s}`);
+});
+
+test('stage 1: at most 1 piece per solution needs a 2-move diagonal mirror', () => {
+  for (const pz of banks[1]) {
+    for (const sol of pz.solutions) {
+      const diag = sol.filter((r) => {
+        const start = pz.pieces.find((p) => p.id === r.id).start;
+        const t = key(targetOf(pz, r));
+        const elems = D4.filter((e) => key(normalize(applyElem(start, e))) === t);
+        return elems.every((e) => e === 'fx_r90' || e === 'fx_r270');
+      }).length;
+      assert.ok(diag <= 1, `${pz.id} ${diag} diagonal-mirror pieces`);
+    }
+  }
+});
+
+test('turn really needed: every solution has a piece flips alone cannot make; turn cards are true', () => {
+  for (const pz of all) {
+    for (const sol of pz.solutions) assert.ok(sol.some((r) => !flipOnly(pz, r)), `${pz.id} solvable with flip buttons only`);
+    for (const [pid, v] of Object.entries(pz.cards)) {
+      if (v !== 'turn' && v !== 'flipturn') continue;
+      for (const sol of pz.solutions) assert.ok(!flipOnly(pz, sol.find((r) => r.id === pid)), `${pz.id} card ${pid}=${v} reachable by flips`);
+    }
   }
 });
 
@@ -184,8 +228,43 @@ test('audit catches corrupted puzzles (one group per sabotage)', () => {
   pz = clone(base); pz.minMoves += 1;
   assert.ok(fails(pz).includes('E'), 'wrong minMoves -> E');
 
-  pz = clone(base); pz.solutions[0][0].elem = 'nope';
-  assert.ok(fails(pz).includes('F'), 'unreachable target -> F');
+});
+
+test('audit F catches a wrong MIN_MOVES table (buttons BFS != pieceMoves)', () => {
+  const saved = MIN_MOVES.fx_r90;
+  try {
+    MIN_MOVES.fx_r90 = 1;
+    const report = auditBank(banks);
+    assert.ok(report.F.length > 0, 'F must notice pieceMoves disagreeing with real button presses');
+  } finally {
+    MIN_MOVES.fx_r90 = saved;
+  }
+  assert.equal(MIN_MOVES.fx_r90, 2);
+});
+
+test('flipOnlyReach: flip buttons reach id, fx, fx_r180 and r180 images only', () => {
+  const L4 = libOf('L4').tris;
+  const reach = flipOnlyReach(L4);
+  const img = (e) => key(normalize(applyElem(L4, e)));
+  assert.equal(reach.size, 4);
+  for (const e of ['id', 'fx', 'fx_r180', 'r180']) assert.ok(reach.has(img(e)), e);
+  for (const e of ['r90', 'r270', 'fx_r90', 'fx_r270']) assert.ok(!reach.has(img(e)), e);
+});
+
+test('audit D: the flip-only BFS flags a turn card on a piece that flips alone can place', () => {
+  // 실제 3단계 문제에서, 어떤 해답에서 뒤집기만으로 놓을 수 있는 조각을 찾아 'turn' 카드를 붙인다.
+  let hit = null;
+  for (const pz of banks[3]) {
+    for (const p of pz.pieces) {
+      if (pz.solutions.some((sol) => flipOnly(pz, sol.find((r) => r.id === p.id)))) { hit = { pz, pid: p.id }; break; }
+    }
+    if (hit) break;
+  }
+  assert.ok(hit, 'bank has a piece placeable with flips only');
+  const pz = clone(hit.pz);
+  pz.cards[hit.pid] = 'turn';
+  const d = auditPuzzle(pz).D;
+  assert.ok(d.some((m) => m.includes('needs only flips')), JSON.stringify(d));
 });
 
 // 파일은 `node tools/gen-puzzles.mjs`가 쓴 것(첫 번째 실행), 여기서 다시 만든 것이 두 번째 실행이다.

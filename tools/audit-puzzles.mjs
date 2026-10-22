@@ -1,6 +1,7 @@
 // 문제 은행 전수 감사. node tools/audit-puzzles.mjs → 콘솔 보고, 실패가 하나라도 있으면 종료 코드 1.
 // A 형식·연결·판 크기  B 저장 해답이 모두 isSolved  C solve 재실행 해답 = 저장 해답
-// D 조건 카드가 모든 해답에서 참(+ 뒤집기·돌리기가 필요한 조각 존재)  E minMoves 재계산 일치
+// D 조건 카드가 모든 해답에서 참(+ 뒤집기·돌리기가 필요한 조각 존재, 돌리기는 뒤집기 버튼만의 BFS로 따로 확인)
+// E minMoves 재계산 일치 + 단계별 띠(감사에 적힌 값 그대로, 생성기 값을 가져오지 않음)
 // F 실제 조작 흉내: 조각마다 start에서 MOVES 버튼만으로(BFS) 해답 모양에 닿는 최소 버튼 수 = pieceMoves,
 //   그 모양을 해답 자리에 놓으면 판이 완성되고, 버튼 수 합의 최솟값 = minMoves.
 import { readFileSync } from 'node:fs';
@@ -16,6 +17,10 @@ const GROUPS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const STAGES = [1, 2, 3, 4];
 const PER_STAGE = 40;
 const CARD_VALUES = new Set(['flip', 'turn', 'flipturn']);
+// 단계별 최소 이동 수 띠와 1단계 대각선 뒤집기 상한(리뷰 결정, 생성기와 독립으로 적는다).
+const MIN_MOVES_BAND = { 1: [2, 3], 2: [3, 4], 3: [3, 5], 4: [5, 8] };
+const MAX_DIAG = { 1: 1 };
+const FLIP_BUTTONS = ['flipUp', 'flipDown', 'flipLeft', 'flipRight'];
 const isTri = (t) => Array.isArray(t) && t.length === 3 && t.every(Number.isInteger) && t[2] >= 0 && t[2] <= 3;
 const libOf = (id) => LIBRARY.find((p) => p.id === id);
 
@@ -39,6 +44,23 @@ export function buttonDistance(from, to) {
     }
   }
   return null;
+}
+
+// 뒤집기 버튼(위쪽·아래쪽·왼쪽·오른쪽)만 눌러 from에서 닿을 수 있는 모양 키 집합. needs()와 무관한 독립 계산.
+export function flipOnlyReach(from) {
+  const s0 = normalize(from);
+  const seen = new Set([key(s0)]);
+  const queue = [s0];
+  for (let i = 0; i < queue.length; i++) {
+    for (const m of FLIP_BUTTONS) {
+      const nx = applyMove(queue[i], m);
+      if (!seen.has(key(nx))) {
+        seen.add(key(nx));
+        queue.push(nx);
+      }
+    }
+  }
+  return seen;
 }
 
 // 형식 검사. 이 검사가 실패하면 나머지 검사는 하지 않는다(엉뚱한 예외 대신 A 실패로 보고).
@@ -149,6 +171,22 @@ export function auditPuzzle(pz) {
       if ((v === 'flip' || v === 'flipturn') && !nd[pid].flip) err.push(`card ${pid}=${v} but flip is not needed in every solution`);
       if ((v === 'turn' || v === 'flipturn') && !nd[pid].turn) err.push(`card ${pid}=${v} but turn is not needed in every solution`);
     }
+    // 돌리기 필요를 needs와 따로 확인: 해답마다 뒤집기만으로는 못 만드는 조각이 있어야 하고,
+    // 'turn'·'flipturn' 카드 조각은 모든 해답에서 뒤집기만으로 못 만들어야 한다.
+    const flipMakes = (r) => {
+      const p = pz.pieces.find((x) => x.id === r.id);
+      return flipOnlyReach(p.start).has(key(normalize(applyElem(p.start, r.elem))));
+    };
+    pz.solutions.forEach((sol, si) => {
+      if (sol.every(flipMakes)) err.push(`solution ${si} can be made with flip buttons only`);
+    });
+    for (const [pid, v] of Object.entries(pz.cards)) {
+      if (v !== 'turn' && v !== 'flipturn') continue;
+      pz.solutions.forEach((sol, si) => {
+        const r = sol.find((x) => x.id === pid);
+        if (r && flipMakes(r)) err.push(`card ${pid}=${v} but solution ${si} needs only flips for it`);
+      });
+    }
     if (pz.stage === 3) {
       if (JSON.stringify(pz.cards) !== JSON.stringify(cardsFor(pz))) err.push(`cards ${JSON.stringify(pz.cards)} != expected ${JSON.stringify(cardsFor(pz))}`);
       if (Object.keys(pz.cards).length === 0) err.push('stage 3 needs at least one card');
@@ -160,8 +198,19 @@ export function auditPuzzle(pz) {
     const err = [];
     const m = minMovesOf(pz);
     if (m !== pz.minMoves) err.push(`minMoves ${pz.minMoves} != recomputed ${m}`);
-    const range = STAGE_RULES[pz.stage].minMoves;
-    if (range && (pz.minMoves < range[0] || pz.minMoves > range[1])) err.push(`minMoves ${pz.minMoves} outside ${range[0]}~${range[1]}`);
+    const [lo, hi] = MIN_MOVES_BAND[pz.stage];
+    if (pz.minMoves < lo || pz.minMoves > hi) err.push(`minMoves ${pz.minMoves} outside stage ${pz.stage} band ${lo}~${hi}`);
+    const cap = MAX_DIAG[pz.stage];
+    if (cap !== undefined) {
+      pz.solutions.forEach((sol, si) => {
+        const diag = sol.filter((r) => {
+          const start = pz.pieces.find((p) => p.id === r.id).start;
+          const t = key(normalize(applyElem(start, r.elem)));
+          return D4.filter((e) => key(normalize(applyElem(start, e))) === t).every((e) => e === 'fx_r90' || e === 'fx_r270');
+        }).length;
+        if (diag > cap) err.push(`solution ${si}: ${diag} pieces need a diagonal mirror (max ${cap})`);
+      });
+    }
     return err;
   });
 

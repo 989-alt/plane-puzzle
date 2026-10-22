@@ -211,10 +211,20 @@ test('needs: single L4 board, other starts', () => {
   assert.equal(minMovesOf(onePiece('L4', 'id')), 0);
 });
 
+test('needs: a target reachable only by r180 does not need a turn (left-right + up-down flips give it)', () => {
+  // L4는 비대칭이라 목표 모양을 내는 원소가 r180 하나뿐. 뒤집기 2번(왼쪽·오른쪽 + 위쪽·아래쪽)으로도 만들 수 있으므로 turn은 false.
+  const pz = onePiece('L4', 'r180');
+  assert.equal(pz.solutions.length, 1);
+  assert.equal(pz.solutions[0][0].elem, 'r180');
+  assert.equal(needs(pz).x.turn, false);
+  assert.equal(needs(pz).x.flip, false);
+  assert.equal(minMovesOf(pz), 1); // 최소 이동 수는 그대로(180° 돌리기 1번)
+});
+
 test('needs: symmetric pieces use every element that makes the shape', () => {
   // tS(NE 반) 묶음: NE{id,fx_r90} SE{r90,fx_r180} SW{r180,fx_r270} NW{r270,fx}
   assert.deepEqual(needs(onePiece('tS', 'id', 'fx')), { x: { flip: false, turn: false } }); // NW: fx로 가능
-  assert.deepEqual(needs(onePiece('tS', 'id', 'r180')), { x: { flip: false, turn: true } }); // SW: r180 또는 fx_r270
+  assert.deepEqual(needs(onePiece('tS', 'id', 'r180')), { x: { flip: false, turn: false } }); // SW: r180(= 뒤집기 2번) 또는 fx_r270
   assert.deepEqual(needs(onePiece('tS', 'id', 'r90')), { x: { flip: false, turn: false } }); // SE: fx_r180으로 가능
   // para 묶음: {id,r180} {r90,r270} {fx,fx_r180} {fx_r90,fx_r270}
   assert.deepEqual(needs(onePiece('para', 'id', 'fx')), { x: { flip: true, turn: false } });
