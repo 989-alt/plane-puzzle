@@ -373,10 +373,22 @@ def no_zoom_or_callout(browser, base):
         sel: String(window.getSelection()), menus: window.__menus,
         de: [document.documentElement.scrollLeft, document.documentElement.scrollTop] })""")
     shot(page, "after-taps")
+    # 쉬운 단서 버튼을 누르면(초점이 가며) 화면 상자가 코드로 스크롤되어 무대 전체가 밀리면 안 된다.
+    set_stage(page, 2, "s2-001")
+    page.evaluate("__pp.elapsed(70)")
+    page.wait_for_selector("#easyBtn:not([hidden])", timeout=4000)
+    page.click("#easyBtn")
+    page.wait_for_timeout(300)
+    # 화면 상자는 스크롤 상자가 아니어야 한다(overflow:clip): 흐린 배경(scale 1.08)이 51×32px 넘쳐도 코드 스크롤·초점 이동으로 밀리지 않음
+    sc = page.evaluate("""() => { document.querySelector('#easyBtn').scrollIntoView(); document.querySelector('[data-tool=skip]').focus();
+        return ['#app', '#screen-game', '#stage'].map((q) => { const e = document.querySelector(q); e.scrollTo(200, 200);
+          return [e.scrollLeft, e.scrollTop]; }); }""")
+    shot(page, "easy-clicked")
+    st["box_scroll"] = sc
     check("no_zoom_or_callout",
           "user-scalable=no" in meta and css[0] == "none" and css[1] == "none" and css[2] == "none" and css[3] == "none"
           and st["scale"] == 1 and st["sx"] == 0 and st["sy"] == 0 and st["vx"] == 0 and st["vy"] == 0
-          and st["sel"] == "" and st["menus"] == 0 and st["de"] == [0, 0] and not errors,
+          and st["sel"] == "" and st["menus"] == 0 and st["de"] == [0, 0] and sc == [[0, 0]] * 3 and not errors,
           f"meta={meta!r} css={css} state={st} errors={errors[:2]}")
     ctx.close()
 

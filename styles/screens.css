@@ -2,8 +2,9 @@
    시작·안내·정답은 16:10 틀(.frame)을 화면에 꽉 맞춰 가운데 두고, 배경 그림만 화면 전체를 덮는다.
    게임 화면은 16:10 무대(#stage, 크기는 main.js 가 geom.stageSize 로 px 지정)가 틀이다: 무대 배경 그림 속 판에
    퍼즐 격자를 맞추고(src/view/geom.js), HUD도 무대 안에 cqw(무대 너비 1%)로 둔다. 남는 띠는 흐린 같은 그림. */
-#app{position:fixed;inset:0;overflow:hidden}
-.screen{position:absolute;inset:0;overflow:hidden;visibility:hidden;opacity:0;transition:opacity .25s ease-out,visibility 0s linear .25s}
+/* overflow:clip — 넘침은 자르되 스크롤 상자가 아니다(흐린 배경 scale 1.08 이 51×32px 넘쳐도 초점·코드 스크롤로 화면이 밀리지 않음) */
+#app{position:fixed;inset:0;overflow:hidden;overflow:clip}
+.screen{position:absolute;inset:0;overflow:hidden;overflow:clip;visibility:hidden;opacity:0;transition:opacity .25s ease-out,visibility 0s linear .25s}
 .screen.on{visibility:visible;opacity:1;transition:opacity .25s ease-out}
 .screen .bg{position:absolute;inset:0;background-size:cover;background-position:center}
 .frame{position:absolute;left:50%;top:50%;width:min(100vw,160vh);aspect-ratio:16/10;transform:translate(-50%,-50%);container-type:inline-size}
@@ -57,7 +58,7 @@
 
 /* ③ 게임 */
 #screen-game .bg{background:url(../assets/img/board-bg.webp) center/cover;filter:blur(10px) brightness(.62);transform:scale(1.08)}
-#stage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1280px;height:800px;overflow:hidden;container-type:inline-size;
+#stage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1280px;height:800px;overflow:hidden;overflow:clip;container-type:inline-size;
   background:#C98E4E url(../assets/img/board-bg.webp) center/cover no-repeat;touch-action:none;
   box-shadow:0 0 0 1px rgba(0,0,0,.25),0 0 40px rgba(0,0,0,.45)}
 #board{position:absolute;left:0;top:0;display:block;touch-action:none}

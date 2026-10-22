@@ -335,11 +335,12 @@ function scheduleCheck() {
 function check() {
   if (!puzzle || solved || !bstate || currentScreen() !== 'game') return;
   if (!bstate.pieces.every((p) => p.at)) return;
+  // 카드 줄에 남은 이동이 있으면 아직 드러나지 않은 모양이다: 맞든 틀리든 흔들지 않고 남은 카드를 알린다.
+  if (bstate.pieces.some((p) => p.queue.length > 0)) {
+    showBubble(TEXT.pending, 3500);
+    return;
+  }
   if (isSolved(puzzle, bstate.pieces)) {
-    if (bstate.pieces.some((p) => p.queue.length > 0)) {
-      showBubble(TEXT.pending, 3500);
-      return;
-    }
     win();
   } else {
     shake();
@@ -414,24 +415,27 @@ function useEasy() {
   scheduleCheck();
 }
 
+let skipping = false; // 건너뛰기 두 번 누름 막기(새 문제를 받는 동안은 한 번만)
 function skip() {
+  if (skipping) return;
   if (solved && currentScreen() === 'game') return;
   // 문제를 못 불러온 상태면 연속 기록은 그대로 두고 다시 불러오기만 한다.
   if (!puzzle || loadFailed) {
     nextPuzzle();
     return;
   }
+  skipping = true;
   progress = recordSkip(progress);
   persist();
-  nextPuzzle();
+  nextPuzzle().finally(() => { skipping = false; });
 }
 
-// 다시 놓기: 모든 조각을 처음 모양·처음 자리로(이동 수도 처음부터). 시간은 그대로 간다.
+// 다시 놓기: 모든 조각을 처음 모양·처음 자리로. 이동 수는 그대로 쌓인다(다시 놓기 전 이동도 4단계 별 판정에 센다). 시간도 그대로 간다.
 function restart() {
   if (!puzzle || solved || !bounds) return;
   input?.cancel();
   view.finish();
-  bstate = L.initialState(puzzle, bounds, { hidden });
+  bstate = { ...L.initialState(puzzle, bounds, { hidden }), moves: bstate.moves };
   render();
 }
 
@@ -478,6 +482,7 @@ onTutorialDone(({ dontShowAgain, mode }) => {
   if (mode === 'help') {
     resumeTimer('help');
     showScreen('game');
+    scheduleCheck(); // 안내가 떠 있는 동안 끝난 놓기의 판정을 다시 한다
   } else enterGame();
 });
 onNext(() => {

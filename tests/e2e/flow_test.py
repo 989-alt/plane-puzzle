@@ -422,8 +422,10 @@ def restart_puts_pieces_back(browser, base):
     page.click("[data-tool=restart]")
     page.wait_for_timeout(300)
     back = page.evaluate("JSON.stringify(__pp.state.pieces.map((p) => [p.tris, p.pos]))")
-    check("restart_puts_pieces_back", moved != start and back == start and page.evaluate("__pp.moves") == 0 and not errors,
-          f"moved={moved != start} back={back == start} errors={errors[:2]}")
+    moves = page.evaluate("__pp.moves")
+    # 판정(Task 8): 다시 놓기는 이동 수를 그대로 둔다(다시 놓기 전 이동도 4단계 별 판정에 센다)
+    check("restart_puts_pieces_back", moved != start and back == start and moves == 1 and not errors,
+          f"moved={moved != start} back={back == start} moves={moves} errors={errors[:2]}")
     ctx.close()
 
 
@@ -610,11 +612,74 @@ def drag_then_skip_is_safe(browser, base):
     ctx.close()
 
 
+def help_then_solved_checks(browser, base):
+    """놓기 애니메이션이 끝나기 전에 도움말을 열어 판정이 빠져도, 도움말을 닫으면 다시 판정해 정답 화면이 나온다."""
+    ctx, page, errors = open_game(browser, base)
+    page.click("[data-tool=help]")
+    page.wait_for_timeout(300)
+    page.evaluate("""() => { const s = __pp.state; const P = __pp.puzzle;
+        for (const r of P.solutions[0]) { const pc = s.pieces.find((q) => q.id === r.id);
+          const start = __pp.normalize(P.pieces.find((q) => q.id === r.id).start);
+          const m = __pp.L.elemMarked(start, [...start[0], 0], r.elem);
+          pc.tris = m.tris; pc.mark = m.mark; pc.pos = [r.dx, r.dy]; pc.at = [r.dx, r.dy]; pc.queue = []; }
+        __pp.setState(s); __pp.check(); }""")
+    under_help = game(page)["screen"]
+    page.click("#tutDone")
+    try:
+        page.wait_for_function("() => __pp.game().screen === 'win'", timeout=4000)
+        won = True
+    except Exception:
+        won = False
+    check("help_then_solved_checks", under_help != "win" and won and not errors,
+          f"under_help={under_help} won={won} errors={errors[:2]}")
+    ctx.close()
+
+
+def pending_queue_wrong_no_shake(browser, base):
+    """숨김 모드에서 판이 꽉 찼는데 틀린 모양이어도 카드 줄이 남아 있으면 흔들지 않고 남은 카드 말풍선만."""
+    ctx, page, errors = open_game(browser, base)
+    set_stage(page, 3, "s3-001")
+    before = game(page)
+    page.evaluate("""() => { const s = __pp.state; const P = __pp.puzzle;
+        for (const r of P.solutions[0]) { const pc = s.pieces.find((q) => q.id === r.id);
+          const start = __pp.normalize(P.pieces.find((q) => q.id === r.id).start);
+          const m = __pp.L.elemMarked(start, [...start[0], 0], r.elem);
+          pc.tris = m.tris; pc.mark = m.mark; pc.pos = [r.dx, r.dy]; pc.at = [r.dx, r.dy]; pc.queue = []; }
+        const a = s.pieces[0], b = s.pieces[1]; b.pos = [...a.pos]; b.at = [...a.pos]; a.queue = ['cw90'];
+        __pp.setState(s); __pp.check(); }""")
+    page.wait_for_timeout(150)
+    shaking = page.evaluate("document.getElementById('board').classList.contains('shake')")
+    text = page.inner_text("#bubbleText")
+    after = game(page)
+    check("pending_queue_wrong_no_shake",
+          not shaking and after["shakes"] == before["shakes"] and text == "카드에 남은 이동이 있어요. 조각을 다시 놓아 보세요"
+          and after["screen"] == "game" and not errors,
+          f"shake={shaking} shakes={before['shakes']}->{after['shakes']} text={text!r} errors={errors[:2]}")
+    ctx.close()
+
+
+def skip_double_tap_once(browser, base):
+    """건너뛰기를 빠르게 두 번 눌러도 연속 기록은 한 번만 줄고 문제는 한 번만 바뀐다."""
+    ctx, page, errors = open_game(browser, base)
+    page.evaluate("__pp.setProgress({streak: 4})")
+    s0 = game(page)
+    page.evaluate("() => { const b = document.querySelector('[data-tool=skip]'); b.click(); b.click(); }")
+    page.wait_for_function("(a) => __pp.game().attemptId !== a", arg=s0["attemptId"], timeout=5000)
+    page.wait_for_timeout(500)
+    s1 = game(page)
+    n0 = int(s0["attemptId"].split("#")[1])
+    n1 = int(s1["attemptId"].split("#")[1])
+    check("skip_double_tap_once", s1["streak"] == 3 and n1 == n0 + 1 and not errors,
+          f"streak={s0['streak']}->{s1['streak']} attempt={n0}->{n1} errors={errors[:2]}")
+    ctx.close()
+
+
 TESTS = (solve_shows_win_and_scores, promote_through_stage4, stage4_min_moves_star, easy_hint_after_60s,
          easy_turns_preview_on, hidden_pending_queue_not_solved, all_on_board_wrong_shakes, stage_clues_and_red_marks,
          hidden_drop_next_to_board_keeps_queue, skip_lowers_streak, no_immediate_repeat, restart_puts_pieces_back,
          help_keeps_puzzle, portrait_pauses_timer, resize_refits, load_failure_retry, win_focuses_next,
-         best_survives_reload, easy_space_reserved, drag_then_skip_is_safe)
+         best_survives_reload, easy_space_reserved, drag_then_skip_is_safe,
+         help_then_solved_checks, pending_queue_wrong_no_shake, skip_double_tap_once)
 
 
 def main():
