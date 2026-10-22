@@ -52,3 +52,31 @@ export function half(x, y, dir) {
   if (!qs) throw new Error(`unknown half dir: ${dir}`);
   return qs.map((q) => [x, y, q]);
 }
+
+// 변을 공유하는 이웃 사분 삼각형 3개(같은 칸의 양옆 사분 2개 + 옆 칸의 마주 보는 사분 1개).
+function neighbors([x, y, q]) {
+  const out = [[x, y, (q + 1) % 4], [x, y, (q + 3) % 4]];
+  if (q === 0) out.push([x, y - 1, 2]);
+  if (q === 1) out.push([x + 1, y, 3]);
+  if (q === 2) out.push([x, y + 1, 0]);
+  if (q === 3) out.push([x - 1, y, 1]);
+  return out;
+}
+
+// 변으로 이어져 있으면 true(꼭짓점만 닿는 것은 이어진 것이 아님). 빈 모양은 false.
+export function connected(tris) {
+  if (tris.length === 0) return false;
+  const all = new Set(tris.map((t) => key([t])));
+  const seen = new Set([key([tris[0]])]);
+  const stack = [tris[0]];
+  while (stack.length) {
+    for (const n of neighbors(stack.pop())) {
+      const k = key([n]);
+      if (all.has(k) && !seen.has(k)) {
+        seen.add(k);
+        stack.push(n);
+      }
+    }
+  }
+  return seen.size === all.size;
+}

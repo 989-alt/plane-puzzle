@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rotCW, flipLR, flipUD, normalize, key, translate, cell, half } from '../src/core/grid.js';
+import { rotCW, flipLR, flipUD, normalize, key, translate, cell, half, connected } from '../src/core/grid.js';
 import {
   MOVES, applyMove, D4, applyElem, MIN_MOVES, orientations, LIBRARY, pieceMoves,
 } from '../src/core/pieces.js';
@@ -11,28 +11,6 @@ const piece = (id) => {
   return p.tris;
 };
 const transpose = (tris) => normalize(rotCW(rotCW(rotCW(flipLR(tris))))); // (x,y) -> (y,x)
-
-// 변을 공유하는 이웃 사분 삼각형.
-function neighbors([x, y, q]) {
-  const out = [[x, y, (q + 1) % 4], [x, y, (q + 3) % 4]];
-  if (q === 0) out.push([x, y - 1, 2]);
-  if (q === 1) out.push([x + 1, y, 3]);
-  if (q === 2) out.push([x, y + 1, 0]);
-  if (q === 3) out.push([x - 1, y, 1]);
-  return out;
-}
-function connected(tris) {
-  const all = new Set(tris.map((t) => t.join(',')));
-  const seen = new Set([tris[0].join(',')]);
-  const stack = [tris[0]];
-  while (stack.length) {
-    for (const n of neighbors(stack.pop())) {
-      const k = n.join(',');
-      if (all.has(k) && !seen.has(k)) { seen.add(k); stack.push(n); }
-    }
-  }
-  return seen.size === all.size;
-}
 
 test('MOVES list', () => {
   assert.deepEqual(MOVES, ['flipUp', 'flipDown', 'flipLeft', 'flipRight', 'cw90', 'cw180', 'cw270', 'ccw90', 'ccw180', 'ccw270']);
@@ -196,13 +174,6 @@ test('every library piece: even quarter count, no duplicates, normalized, edge-c
     assert.deepEqual(p.tris, normalize(p.tris), p.id);
     assert.ok(connected(p.tris), `${p.id} connected`);
   }
-});
-
-test('connected helper rejects a split shape', () => {
-  assert.ok(!connected([...half(0, 0, 'NE'), ...half(5, 5, 'NE')]));
-  assert.ok(!connected([[0, 0, 0], [0, 0, 2]]));
-  assert.ok(connected([[0, 0, 1], [1, 0, 3]]));
-  assert.ok(connected(cell(0, 0)));
 });
 
 test('no two library pieces are the same shape (mirror images excluded)', () => {

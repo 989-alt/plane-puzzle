@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rotCW, flipLR, flipUD, normalize, key, translate, cell, half } from '../src/core/grid.js';
+import { rotCW, flipLR, flipUD, normalize, key, translate, cell, half, connected } from '../src/core/grid.js';
 
 const L4 = [[0, 0], [0, 1], [0, 2], [1, 2]].flatMap(([x, y]) => cell(x, y));
 const MIX = [...cell(0, 0), ...half(1, 0, 'SW'), [0, 1, 0]];
@@ -105,3 +105,14 @@ test('key is order independent and position sensitive', () => {
   assert.notEqual(key([[0, 0, 1]]), key([[1, 0, 1]]));
   assert.equal(typeof key(L4), 'string');
 });
+
+test('connected: edge-sharing only, split shapes rejected', () => {
+  assert.ok(!connected([...half(0, 0, 'NE'), ...half(5, 5, 'NE')]));
+  assert.ok(!connected([[0, 0, 0], [0, 0, 2]]));
+  assert.ok(connected([[0, 0, 1], [1, 0, 3]]));
+  assert.ok(connected(cell(0, 0)));
+  assert.ok(connected(L4));
+  assert.ok(!connected([[0, 0, 0], [1, 0, 0]])); // 꼭짓점만 닿음
+  assert.ok(!connected([]));
+});
+
