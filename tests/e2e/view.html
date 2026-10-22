@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>View Harness</title>
+<link rel="icon" href="../../assets/img/favicon.svg">
+<style>
+@font-face{font-family:Jua;src:url(../../assets/fonts/Jua-Regular.subset.woff2) format("woff2");font-display:swap}
+@font-face{font-family:Pretendard;font-weight:400;src:url(../../assets/fonts/Pretendard-Regular.subset.woff2) format("woff2");font-display:swap}
+@font-face{font-family:Pretendard;font-weight:700;src:url(../../assets/fonts/Pretendard-Bold.subset.woff2) format("woff2");font-display:swap}
+:root{--bg:#24160a;--hud:rgba(36,20,6,.55);--hud-line:rgba(255,236,190,.55);--hud-text:#FFF3D6}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;overscroll-behavior:none;touch-action:none;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+#stage{position:relative;overflow:hidden;touch-action:none;background:#C98E4E url(../../assets/img/board-bg.webp) center/cover no-repeat}
+#board{position:absolute;left:0;top:0;display:block;touch-action:none}
+.hud{position:absolute;box-sizing:border-box;border:2px dashed var(--hud-line);border-radius:14px;background:var(--hud);
+  color:var(--hud-text);font:15px/1.2 Jua,Pretendard,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;
+  pointer-events:none;opacity:.85}
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage"><svg id="board" xmlns="http://www.w3.org/2000/svg" aria-label="퍼즐 판"></svg></div></div>
+<script type="module">
+// Task 6 시험 하네스: ?id=s3-005&hidden=1 (&ghost=0|1, &hud=0, &motion=0 = 애니메이션 끔)
+// window.__pp 훅(Task 7 main.js 가 같은 이름을 쓴다): state, puzzle, moves, wrong, busy, solved,
+// pieceScreenXY(id), panelRect(), triAt(x, y), setState(s), stageToClient([x, y]) 등.
+import { key, normalize, translate } from '../../src/core/grid.js';
+import { applyMove, applyElem, MOVES } from '../../src/core/pieces.js';
+import { canPlace, wrongTris, isSolved } from '../../src/core/board.js';
+import * as L from '../../src/core/layout.js';
+import { stageSize, fitPuzzle, hudRects, triCentroid, screenToTri, cellBoxes } from '../../src/view/geom.js';
+import { createView } from '../../src/view/render.js';
+import { attachInput } from '../../src/view/input.js';
+
+const q = new URLSearchParams(location.search);
+const id = q.get('id') || 's1-001';
+const stageNo = Number(id.slice(1, id.indexOf('-')));
+const hidden = q.has('hidden') ? q.get('hidden') === '1' : stageNo >= 3;
+const ghost = q.has('ghost') ? q.get('ghost') === '1' : stageNo === 1;
+const reducedMotion = q.get('motion') === '0' ? true : undefined;
+
+const bank = await fetch(`../../data/puzzles-s${stageNo}.json`).then((r) => r.json());
+const puzzle = bank.find((p) => p.id === id);
+const stage = document.getElementById('stage');
+const svg = document.getElementById('board');
+const { W, H } = stageSize(innerWidth, innerHeight);
+stage.style.width = `${W}px`;
+stage.style.height = `${H}px`;
+
+const ui = hudRects(W, H);
+const HUD_TEXT = { chip: '도형 이동 퍼즐', mission: '단계 · 미션', score: '점수', clue: '단서 카드', tools: '도구 막대' };
+if (q.get('hud') !== '0') {
+  for (const r of ui) {
+    const d = document.createElement('div');
+    d.className = 'hud';
+    d.dataset.hud = r.name;
+    Object.assign(d.style, { left: `${r.l}px`, top: `${r.t}px`, width: `${r.r - r.l}px`, height: `${r.b - r.t}px` });
+    d.textContent = HUD_TEXT[r.name] || r.name;
+    stage.appendChild(d);
+  }
+}
+
+const { g, bounds } = fitPuzzle(W, H, puzzle, ui);
+const ctx = { board: puzzle.board, bounds };
+let state = L.initialState(puzzle, bounds, { hidden });
+const view = createView(svg, puzzle, { g, reducedMotion, ui });
+view.setGhost(ghost);
+let wrong = new Set();
+const actions = [];
+function render() {
+  view.update(state);
+  if (stageNo === 1) {
+    wrong = wrongTris(puzzle, state.pieces);
+    view.setWrong(wrong);
+  }
+}
+function dispatch(a) {
+  actions.push(a.type);
+  state = L.applyAction(state, a, ctx);
+  render();
+}
+render();
+const input = attachInput(view, () => state, dispatch, { hidden, getUi: () => ui });
+
+const stageRect = () => svg.getBoundingClientRect();
+const stageToClient = ([x, y]) => {
+  const r = stageRect();
+  return { x: r.left + (x * r.width) / W, y: r.top + (y * r.height) / H };
+};
+const clientToStage = (x, y) => {
+  const r = stageRect();
+  return [((x - r.left) * W) / r.width, ((y - r.top) * H) / r.height];
+};
+const pieceOf = (pid) => state.pieces.find((p) => p.id === pid);
+const hitId = (x, y) => {
+  const e = document.elementFromPoint(x, y);
+  const pc = e && e.closest ? e.closest('.pp-piece') : null;
+  return pc ? pc.getAttribute('data-id') : null;
+};
+
+window.__pp = {
+  ready: true,
+  get state() { return JSON.parse(JSON.stringify(state)); },
+  puzzle,
+  g: { S: g.S, ox: g.ox, oy: g.oy, W, H, outer: g.outer, inner: g.inner },
+  bounds,
+  ui,
+  hidden,
+  get moves() { return state.moves; },
+  get wrong() { return [...wrong].sort(); },
+  get busy() { return view.busy(); },
+  get solved() { return isSolved(puzzle, state.pieces); },
+  get actions() { return actions.slice(); },
+  // 그 조각을 누를 수 있는 화면 점(client px): 조각 사분 가운데 중 실제로 그 조각이 맞는 첫 점.
+  pieceScreenXY(pid, tri = null) {
+    const pc = pieceOf(pid);
+    const list = tri ? [tri] : pc.tris;
+    for (const t of list) {
+      const c = stageToClient(triCentroid([t[0] + pc.pos[0], t[1] + pc.pos[1], t[2]], g));
+      if (tri || hitId(c.x, c.y) === pid) return c;
+    }
+    return stageToClient(triCentroid([pc.tris[0][0] + pc.pos[0], pc.tris[0][1] + pc.pos[1], pc.tris[0][2]], g));
+  },
+  // 모든 조각의 모든 사분 가운데 중 그 조각이 아닌 것이 맞는 점(패널 등이 덮음) 목록
+  covered() {
+    const out = [];
+    for (const pc of state.pieces) {
+      for (const t of pc.tris) {
+        const c = stageToClient(triCentroid([t[0] + pc.pos[0], t[1] + pc.pos[1], t[2]], g));
+        const e = document.elementFromPoint(c.x, c.y);
+        const hit = e && e.closest ? e.closest('.pp-piece') : null;
+        if (!hit || hit.getAttribute('data-id') !== pc.id) out.push([pc.id, t, e ? (e.id || e.tagName) : null]);
+      }
+    }
+    return out;
+  },
+  // 패널 사각형(client px), 닫혀 있으면 null
+  panelRect() {
+    const el = document.getElementById('pp-panel');
+    if (!el || !el.classList.contains('on')) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height, layout: el.dataset.layout };
+  },
+  panelState: () => input.panelState(),
+  // 화면 점 아래 조각과 잡힌 사분(그 조각 모양 기준)
+  triAt(x, y) {
+    const pid = hitId(x, y);
+    if (!pid) return null;
+    const pc = pieceOf(pid);
+    const [tx, ty, tq] = screenToTri(...clientToStage(x, y), g);
+    return { id: pid, tri: [tx - pc.pos[0], ty - pc.pos[1], tq] };
+  },
+  // 조각 그림의 지금 왼쪽 위(무대 px, 끌기 중 포함)
+  drawnTopLeft(pid) {
+    const node = view.nodeOf(pid);
+    const m = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(node.getAttribute('transform'));
+    return [Number(m[1]), Number(m[2])];
+  },
+  queueCards: (pid) => svg.querySelectorAll(`[data-queue="${pid}"] .pp-card`).length,
+  queueRect: (pid) => view.queueRect(pid),
+  wrongOf: (pieces) => [...wrongTris(puzzle, pieces)].sort(),
+  wrongPolys: () => svg.querySelectorAll('.pp-wrong-tri').length,
+  setState(s) { state = s; render(); },
+  dispatch,
+  stageToClient,
+  clientToStage,
+  // 시험에서 쓰는 순수 함수들
+  key, normalize, translate, applyMove, applyElem, MOVES, canPlace, L,
+  // 상태가 바른지: 판 조각은 판 안, 트레이 조각은 경계 안·판/UI 칸 밖, 겹침 없음, 트레이 조각끼리 칸 안 나눔
+  consistent() {
+    const problems = [];
+    const seen = new Map();
+    for (const pc of state.pieces) {
+      const placed = translate(pc.tris, pc.pos[0], pc.pos[1]);
+      if (pc.at) {
+        if (!canPlace(puzzle.board, [], placed)) problems.push(`${pc.id} off board`);
+      } else {
+        const others = state.pieces.filter((o) => o.id !== pc.id && !o.at).map((o) => translate(o.tris, o.pos[0], o.pos[1]));
+        if (!L.trayOk(pc.tris, pc.pos, others, bounds)) problems.push(`${pc.id} bad tray spot ${pc.pos}`);
+      }
+      for (const t of placed) {
+        const k = t.join(',');
+        if (seen.has(k)) problems.push(`${pc.id} overlaps ${seen.get(k)}`);
+        seen.set(k, pc.id);
+      }
+    }
+    return problems;
+  },
+};
+await document.fonts.ready;
+window.__ppReady = true;
+</script>
+</body>
+</html>
